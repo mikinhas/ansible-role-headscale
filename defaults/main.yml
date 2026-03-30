@@ -1,0 +1,79 @@
+---
+headscale_cleanup_headscale: false
+headscale_cleanup_exit_node: false
+
+headscale_image: "headscale/headscale:{{ headscale_version }}"
+headscale_version: "v0.28"
+
+headscale_domain: "headscale.example.com"
+
+headscale_data_dir: "/opt/headscale"
+headscale_container_name: "headscale"
+
+headscale_docker_networks:
+  - name: headscale
+
+# Server
+headscale_listen_addr: "0.0.0.0:8080"
+headscale_metrics_listen_addr: "0.0.0.0:9090"
+headscale_grpc_listen_addr: "0.0.0.0:50443"
+
+# Database
+headscale_database_type: "sqlite"
+headscale_database_path: "/var/lib/headscale/db.sqlite"
+
+# DERP
+headscale_derp_urls:
+  - "https://controlplane.tailscale.com/derpmap/default"
+headscale_derp_auto_update: true
+headscale_derp_update_frequency: "24h"
+
+# DNS
+headscale_dns_base_domain: "tailnet.local"
+headscale_dns_magic_dns: true
+headscale_dns_nameservers_global:
+  - "1.1.1.1"
+  - "9.9.9.9"
+# Extra DNS records - list of dicts with 'name', 'type' and 'value'
+# Example:
+#   headscale_dns_extra_records:
+#     - name: "nextcloud.tailnet.local"
+#       type: A
+#       value: "100.64.0.5"
+#     - name: "jellyfin.tailnet.local"
+#       type: A
+#       value: "100.64.0.5"
+headscale_dns_extra_records: []
+
+# Prefixes
+headscale_prefixes_v4: "10.10.10.0/24"
+headscale_prefixes_v6: "fd7a:115c:a1e0::/48"
+
+# Users - list of dicts with 'name', optional 'preauthkey' (default: false) and 'expiration' (default: 24h)
+# Example:
+#   headscale_users:
+#     - name: alice
+#       preauthkey: true
+#       expiration: 24h
+#     - name: bob
+#       preauthkey: true
+headscale_users: []
+headscale_preauthkeys_dir: "{{ headscale_data_dir }}/preauthkeys"
+
+# Exit node
+headscale_exit_node: false
+headscale_exit_node_container_name: "tailscale-exit-node"
+headscale_exit_node_image: "tailscale/tailscale:v1.94.2"
+headscale_exit_node_user: "exit-node"
+headscale_exit_node_hostname: "exit-node"
+headscale_exit_node_state_dir: "{{ headscale_data_dir }}/tailscale-exit-node"
+
+# Traefik
+headscale_traefik_entrypoint: "websecure"
+headscale_traefik_tls_certresolver: "letsencrypt"
+headscale_traefik_labels:
+  traefik.enable: "true"
+  traefik.http.routers.headscale.rule: "Host(`{{ headscale_domain }}`)"
+  traefik.http.routers.headscale.entrypoints: "{{ headscale_traefik_entrypoint }}"
+  traefik.http.routers.headscale.tls.certresolver: "{{ headscale_traefik_tls_certresolver }}"
+  traefik.http.services.headscale.loadbalancer.server.port: "8080"

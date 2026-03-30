@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: headscale
+  namespace: mikinhas
+  author: mikinhas
+  description: Deploy Headscale via Docker with Traefik integration
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble

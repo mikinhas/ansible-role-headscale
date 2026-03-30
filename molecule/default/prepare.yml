@@ -1,0 +1,13 @@
+---
+- name: Prepare
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    docker_networks:
+      - headscale
+    traefik_networks:
+      - name: headscale
+  roles:
+    - mikinhas.docker
+    - mikinhas.traefik

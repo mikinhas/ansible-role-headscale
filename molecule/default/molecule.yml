@@ -1,0 +1,24 @@
+---
+driver:
+  name: vagrant
+  provider:
+    name: virtualbox
+platforms:
+  - name: ubuntu-noble
+    box: bento/ubuntu-24.04
+    memory: 1024
+    cpus: 1
+provisioner:
+  name: ansible
+  options:
+    skip-tags: notest
+  config_options:
+    defaults:
+      roles_path: ${MOLECULE_PROJECT_DIRECTORY}/..
+  requirements_file: ${MOLECULE_PROJECT_DIRECTORY}/requirements.yml
+  playbooks:
+    prepare: prepare.yml
+verifier:
+  name: testinfra
+  options:
+    sudo: true

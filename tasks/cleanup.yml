@@ -1,0 +1,54 @@
+---
+# Exit node cleanup
+- name: Stop and remove tailscale exit node container
+  become: true
+  community.docker.docker_container:
+    name: "{{ headscale_exit_node_container_name }}"
+    state: absent
+  when: headscale_cleanup_exit_node | bool
+
+- name: Remove exit node state directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ headscale_exit_node_state_dir }}"
+    state: absent
+  when: headscale_cleanup_exit_node | bool
+
+- name: Remove IPv4 forwarding sysctl (exit node)
+  become: true
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    state: absent
+    reload: true
+  when: headscale_cleanup_exit_node | bool
+
+- name: Remove IPv6 forwarding sysctl (exit node)
+  become: true
+  ansible.posix.sysctl:
+    name: net.ipv6.conf.all.forwarding
+    state: absent
+    reload: true
+  when: headscale_cleanup_exit_node | bool
+
+# Headscale cleanup
+- name: Stop and remove headscale container
+  become: true
+  community.docker.docker_container:
+    name: "{{ headscale_container_name }}"
+    state: absent
+  when: headscale_cleanup_headscale | bool
+
+- name: Remove headscale docker networks
+  become: true
+  community.docker.docker_network:
+    name: "{{ item.name }}"
+    state: absent
+  loop: "{{ headscale_docker_networks }}"
+  when: headscale_cleanup_headscale | bool
+
+- name: Remove headscale data directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ headscale_data_dir }}"
+    state: absent
+  when: headscale_cleanup_headscale | bool

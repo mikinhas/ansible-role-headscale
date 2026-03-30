@@ -1,0 +1,130 @@
+---
+- name: Enable IPv4 forwarding for exit node
+  become: true
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_set: true
+    state: present
+    reload: true
+
+- name: Enable IPv6 forwarding for exit node
+  become: true
+  ansible.posix.sysctl:
+    name: net.ipv6.conf.all.forwarding
+    value: "1"
+    sysctl_set: true
+    state: present
+    reload: true
+
+- name: Create exit node state directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ headscale_exit_node_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Create exit node user in headscale
+  become: true
+  community.docker.docker_container_exec:
+    container: "{{ headscale_container_name }}"
+    command: headscale users create {{ headscale_exit_node_user | quote }}
+  register: _exit_node_user_result
+  changed_when: "'User created' in _exit_node_user_result.stdout"
+  failed_when:
+    - _exit_node_user_result.rc != 0
+    - "'already exists' not in _exit_node_user_result.stderr"
+    - "'UNIQUE constraint failed' not in _exit_node_user_result.stderr"
+
+- name: Get exit node user ID
+  become: true
+  community.docker.docker_container_exec:
+    container: "{{ headscale_container_name }}"
+    command: headscale users list -o json
+  register: _exit_node_user_list
+  changed_when: false
+  check_mode: false
+
+- name: Set exit node user ID fact
+  ansible.builtin.set_fact:
+    _exit_node_user_id: >-
+      {{ (_exit_node_user_list.stdout | from_json
+          | selectattr('name', 'equalto', headscale_exit_node_user)
+          | first).id }}
+
+- name: Check if exit node container is already running
+  become: true
+  community.docker.docker_container_info:
+    name: "{{ headscale_exit_node_container_name }}"
+  register: _exit_node_container_info
+
+- name: Generate preauthkey for exit node
+  become: true
+  no_log: true
+  community.docker.docker_container_exec:
+    container: "{{ headscale_container_name }}"
+    command: headscale preauthkeys create --user {{ _exit_node_user_id }} --expiration 1h
+  register: _exit_node_authkey
+  when: >
+    not (_exit_node_container_info.exists | default(false))
+    or not (_exit_node_container_info.container.State.Running | default(false))
+
+- name: Create Tailscale exit node container
+  become: true
+  no_log: true
+  community.docker.docker_container:
+    name: "{{ headscale_exit_node_container_name }}"
+    image: "{{ headscale_exit_node_image }}"
+    pull: true
+    restart_policy: unless-stopped
+    network_mode: host
+    capabilities:
+      - NET_ADMIN
+      - SYS_MODULE
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    volumes:
+      - "{{ headscale_exit_node_state_dir }}:/var/lib/tailscale"
+    env:
+      TS_AUTHKEY: "{{ _exit_node_authkey.stdout | trim }}"
+      TS_STATE_DIR: "/var/lib/tailscale"
+      TS_EXTRA_ARGS: "--login-server=http://127.0.0.1:8080 --advertise-exit-node --hostname={{ headscale_exit_node_hostname }}"
+  when: _exit_node_authkey is not skipped
+
+- name: Wait for exit node to register
+  become: true
+  community.docker.docker_container_exec:
+    container: "{{ headscale_container_name }}"
+    command: headscale nodes list --user {{ headscale_exit_node_user }}
+  register: _exit_node_registered
+  until: "headscale_exit_node_hostname in _exit_node_registered.stdout"
+  retries: 15
+  delay: 5
+  when: _exit_node_authkey is not skipped
+
+- name: Get exit node routes
+  become: true
+  community.docker.docker_container_exec:
+    container: "{{ headscale_container_name }}"
+    command: headscale nodes list-routes -o json
+  register: _exit_node_routes
+  changed_when: false
+  check_mode: false
+
+- name: Set exit node info
+  ansible.builtin.set_fact:
+    _exit_node_info: >-
+      {{ _exit_node_routes.stdout | from_json
+         | selectattr('name', 'equalto', headscale_exit_node_hostname)
+         | first }}
+
+- name: Approve exit node routes
+  become: true
+  community.docker.docker_container_exec:
+    container: "{{ headscale_container_name }}"
+    command: "headscale nodes approve-routes -i {{ _exit_node_info.id }} -r {{ _exit_node_info.available_routes | join(',') }}"
+  register: _approve_result
+  when: _exit_node_info.available_routes | length > 0
+  changed_when: "'approved' in (_approve_result.stdout | default(''))"

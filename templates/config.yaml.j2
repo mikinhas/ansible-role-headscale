@@ -1,0 +1,61 @@
+---
+# {{ ansible_managed }}
+
+server_url: "https://{{ headscale_domain }}"
+listen_addr: "{{ headscale_listen_addr }}"
+metrics_listen_addr: "{{ headscale_metrics_listen_addr }}"
+grpc_listen_addr: "{{ headscale_grpc_listen_addr }}"
+grpc_allow_insecure: false
+
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+prefixes:
+  v4: "{{ headscale_prefixes_v4 }}"
+  v6: "{{ headscale_prefixes_v6 }}"
+  allocation: sequential
+
+database:
+  type: "{{ headscale_database_type }}"
+{% if headscale_database_type == "sqlite" %}
+  sqlite:
+    path: "{{ headscale_database_path }}"
+{% endif %}
+
+derp:
+  server:
+    enabled: false
+  urls:
+{% for url in headscale_derp_urls %}
+    - "{{ url }}"
+{% endfor %}
+  auto_update_enabled: {{ headscale_derp_auto_update | lower }}
+  update_frequency: "{{ headscale_derp_update_frequency }}"
+
+disable_check_updates: false
+ephemeral_node_inactivity_timeout: "30m"
+
+dns:
+  magic_dns: {{ headscale_dns_magic_dns | lower }}
+  base_domain: "{{ headscale_dns_base_domain }}"
+  nameservers:
+    global:
+{% for ns in headscale_dns_nameservers_global %}
+      - "{{ ns }}"
+{% endfor %}
+{% if headscale_dns_extra_records %}
+  extra_records:
+{% for record in headscale_dns_extra_records %}
+    - name: "{{ record.name }}"
+      type: "{{ record.type }}"
+      value: "{{ record.value }}"
+{% endfor %}
+{% endif %}
+
+log:
+  format: text
+  level: info
+
+policy:
+  mode: file
+  path: ""

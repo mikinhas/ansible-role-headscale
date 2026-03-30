@@ -1,0 +1,114 @@
+---
+- name: Set cleanup flag
+  ansible.builtin.set_fact:
+    _headscale_cleanup: "{{ headscale_cleanup_headscale | bool or headscale_cleanup_exit_node | bool }}"
+
+- name: Run cleanup
+  ansible.builtin.include_tasks: cleanup.yml
+  when: _headscale_cleanup | bool
+
+- name: End play after cleanup
+  ansible.builtin.meta: end_host
+  when: _headscale_cleanup | bool
+
+- name: Create headscale directories
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - "{{ headscale_data_dir }}"
+    - "{{ headscale_data_dir }}/data"
+    - "{{ headscale_data_dir }}/config"
+
+- name: Create headscale docker network
+  become: true
+  community.docker.docker_network:
+    name: "{{ item.name }}"
+  loop: "{{ headscale_docker_networks }}"
+
+- name: Deploy headscale configuration
+  become: true
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ headscale_data_dir }}/config/config.yaml"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart headscale
+
+- name: Create headscale container
+  become: true
+  community.docker.docker_container:
+    name: "{{ headscale_container_name }}"
+    image: "{{ headscale_image }}"
+    pull: true
+    restart_policy: unless-stopped
+    volumes:
+      - "{{ headscale_data_dir }}/config:/etc/headscale"
+      - "{{ headscale_data_dir }}/data:/var/lib/headscale"
+    command: serve
+    networks: "{{ headscale_docker_networks | default(omit) }}"
+    published_ports: "{{ ['127.0.0.1:8080:8080'] if (headscale_exit_node | bool) else omit }}"
+    labels: "{{ headscale_traefik_labels | default(omit) }}"
+
+- name: Create headscale users
+  become: true
+  community.docker.docker_container_exec:
+    container: "{{ headscale_container_name }}"
+    command: headscale users create {{ item.name | quote }}
+  loop: "{{ headscale_users }}"
+  register: _headscale_users_result
+  changed_when: "'User created' in _headscale_users_result.stdout"
+  failed_when:
+    - _headscale_users_result.rc != 0
+    - "'already exists' not in _headscale_users_result.stderr"
+    - "'UNIQUE constraint failed' not in _headscale_users_result.stderr"
+  when: headscale_users | length > 0
+
+- name: List existing headscale users
+  become: true
+  community.docker.docker_container_exec:
+    container: "{{ headscale_container_name }}"
+    command: headscale users list -o json
+  register: _headscale_existing_users
+  changed_when: false
+  check_mode: false
+
+- name: Set list of users to delete
+  ansible.builtin.set_fact:
+    _headscale_users_to_delete: >-
+      {{ _headscale_existing_users.stdout | from_json
+         | map(attribute='name')
+         | reject('in', headscale_users | map(attribute='name'))
+         | reject('equalto', headscale_exit_node_user)
+         | list }}
+
+- name: Delete headscale users not in headscale_users
+  become: true
+  community.docker.docker_container_exec:
+    container: "{{ headscale_container_name }}"
+    command: headscale users destroy --force {{ item | quote }}
+  loop: "{{ _headscale_users_to_delete }}"
+  register: _headscale_users_delete_result
+  changed_when: "'Deleted' in _headscale_users_delete_result.stdout"
+  when: _headscale_users_to_delete | length > 0
+
+- name: Remove preauthkey files for deleted users
+  become: true
+  ansible.builtin.file:
+    path: "{{ headscale_preauthkeys_dir }}/{{ item }}.key"
+    state: absent
+  loop: "{{ _headscale_users_to_delete }}"
+  when: _headscale_users_to_delete | length > 0
+
+- name: Generate preauthkeys
+  ansible.builtin.include_tasks: preauthkeys.yml
+  when: headscale_users | selectattr('preauthkey', 'defined') | selectattr('preauthkey') | list | length > 0
+
+- name: Configure exit node
+  ansible.builtin.include_tasks: exit_node.yml
+  when: headscale_exit_node | bool

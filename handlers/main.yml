@@ -1,0 +1,13 @@
+---
+- name: Restart headscale
+  become: true
+  community.docker.docker_container:
+    name: "{{ headscale_container_name }}"
+    restart: true
+
+- name: Restart tailscale exit node
+  become: true
+  community.docker.docker_container:
+    name: "{{ headscale_exit_node_container_name }}"
+    restart: true
+  when: headscale_exit_node | bool

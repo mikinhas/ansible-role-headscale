@@ -1,0 +1,7 @@
+---
+roles:
+  - name: mikinhas.docker
+  - name: mikinhas.traefik
+collections:
+  - name: community.docker
+  - name: ansible.posix

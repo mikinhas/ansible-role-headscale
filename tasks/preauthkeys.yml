@@ -1,0 +1,54 @@
+---
+- name: Create preauthkeys directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ headscale_preauthkeys_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Check existing preauthkey files
+  become: true
+  ansible.builtin.stat:
+    path: "{{ headscale_preauthkeys_dir }}/{{ item.name }}.key"
+  loop: "{{ headscale_users | selectattr('preauthkey', 'defined') | selectattr('preauthkey') | list }}"
+  register: _preauthkey_files
+
+- name: Get users list from headscale
+  become: true
+  community.docker.docker_container_exec:
+    container: "{{ headscale_container_name }}"
+    command: headscale users list -o json
+  register: _preauthkeys_users_list
+  changed_when: false
+  when: _preauthkey_files.results | rejectattr('stat.exists') | list | length > 0
+
+- name: Set user ID map
+  ansible.builtin.set_fact:
+    _user_id_map: >-
+      {{ dict(_preauthkeys_users_list.stdout | from_json | map(attribute='name')
+              | zip(_preauthkeys_users_list.stdout | from_json | map(attribute='id'))) }}
+  when: _preauthkeys_users_list is not skipped
+
+- name: Generate preauthkeys for users
+  become: true
+  community.docker.docker_container_exec:
+    container: "{{ headscale_container_name }}"
+    command: >-
+      headscale preauthkeys create
+      --user {{ _user_id_map[item.item.name] }}
+      --expiration {{ item.item.expiration | default('24h') }}
+  loop: "{{ _preauthkey_files.results | rejectattr('stat.exists') | list }}"
+  register: _preauthkeys_result
+
+- name: Save preauthkeys to files
+  become: true
+  ansible.builtin.copy:
+    content: "{{ item.stdout | trim }}"
+    dest: "{{ headscale_preauthkeys_dir }}/{{ item.item.item.name }}.key"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ _preauthkeys_result.results | default([]) }}"
+  when: item is not skipped
