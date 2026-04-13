@@ -58,4 +58,8 @@ log:
 
 policy:
   mode: file
+{% if headscale_users | selectattr('approve_routes', 'defined') | list | length > 0 %}
+  path: /etc/headscale/policy.json
+{% else %}
   path: ""
+{% endif %}

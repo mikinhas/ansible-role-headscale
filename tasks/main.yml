@@ -40,6 +40,17 @@
     mode: "0600"
   notify: Restart headscale
 
+- name: Deploy headscale policy file
+  become: true
+  ansible.builtin.template:
+    src: policy.json.j2
+    dest: "{{ headscale_data_dir }}/config/policy.json"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart headscale
+  when: headscale_users | selectattr('approve_routes', 'defined') | list | length > 0
+
 - name: Create headscale container
   become: true
   community.docker.docker_container:

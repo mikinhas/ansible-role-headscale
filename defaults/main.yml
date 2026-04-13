@@ -26,7 +26,7 @@ headscale_database_path: "/var/lib/headscale/db.sqlite"
 headscale_derp_urls:
   - "https://controlplane.tailscale.com/derpmap/default"
 headscale_derp_auto_update: true
-headscale_derp_update_frequency: "24h"
+headscale_derp_uptate_frequency: "24h"
 
 # DNS
 headscale_dns_base_domain: "tailnet.local"
@@ -49,7 +49,8 @@ headscale_dns_extra_records: []
 headscale_prefixes_v4: "10.10.10.0/24"
 headscale_prefixes_v6: "fd7a:115c:a1e0::/48"
 
-# Users - list of dicts with 'name', optional 'preauthkey' (default: false) and 'expiration' (default: 24h)
+# Users - list of dicts with 'name', optional 'preauthkey' (default: false),
+# 'expiration' (default: 24h) and 'approve_routes' (list of CIDRs)
 # Example:
 #   headscale_users:
 #     - name: alice
@@ -57,6 +58,9 @@ headscale_prefixes_v6: "fd7a:115c:a1e0::/48"
 #       expiration: 24h
 #     - name: bob
 #       preauthkey: true
+#       approve_routes:
+#         - "10.244.0.0/16"
+#         - "10.96.0.0/12"
 headscale_users: []
 headscale_preauthkeys_dir: "{{ headscale_data_dir }}/preauthkeys"
 

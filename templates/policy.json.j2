@@ -1,0 +1,7 @@
+{%- set routes = {} -%}
+{%- for user in headscale_users -%}
+{%-   for route in user.approve_routes | default([]) -%}
+{%-     set _ = routes.setdefault(route, []).append(user.name ~ '@') -%}
+{%-   endfor -%}
+{%- endfor -%}
+{{ {"autoApprovers": {"routes": routes}} | to_nice_json }}
